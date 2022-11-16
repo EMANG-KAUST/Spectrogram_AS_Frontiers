@@ -13,7 +13,7 @@ This codes correspond to the paper called Carotid-to-Femoral Pulse Wave Velocity
 
 - Functions : This folder contains the different functions used in the project
 
--Data: The dataset used is this project can be downloaded in : https://peterhcharlton.github.io/pwdb/index.html 
+- Data: The dataset used is this project can be downloaded in : https://peterhcharlton.github.io/pwdb/index.html 
 
 - Results: Every time you run the algorithms the result will be saved in this folder
 
