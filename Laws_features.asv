@@ -1,0 +1,222 @@
+%==========================================================================
+%  Statistical features
+%   Author: Juan M. Vargas
+%   E-mail: jm.manuelvg@gmail.com
+%    July 25th, 2022
+%==========================================================================
+clear all
+clc
+
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load folder and Dataset
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+addpath './Function'  % add function folder
+addpath './Data'  % add data folder
+load('pwdb_data.mat') % Load in-silico dataset
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Select Parameters
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+sig_n="Radial"; % Signal location : Radial , Brachial and Digital
+
+wav='BP'; % Signal type : BP or PPG
+
+SNR="no"; % Noise level : PPG: 65, 45 and 30  and BP: 20, 10, 5
+
+w_type="Hamming"; %Select window type from : Hamming or Kaiser
+
+overlap=0; % Overlaping percentage: Hamming: 0, 60, 95 and Kaiser: 0 , 61, 75 
+
+models='Stat'; % Features selection method
+
+vec_seeds=[5]; % Seed value 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Folder creation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+filen=strcat('./Results/ML/',models,'_',wav,'_',sig_n,'_SNR=',SNR) % Full name of the folder
+
+mkdir(filen) % Create folder
+
+
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load signals
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i=1:4374
+
+sig=data.waves.P_Radial{1,i}; % Load signal
+
+if strcmp(SNR,"no")==0
+    sig=awgn(sig,str2double(SNR)); % Add Gaussian White noise
+
+end
+
+sig_nf{i,1}=(sig-min(sig))/(max(sig)-min(sig)); % Normalize signal
+
+
+end
+
+tab=struct2table(data.haemods);
+cfpwv=tab.('PWV_cf');
+
+%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Split dataset
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for j=1:size(vec_seeds,2)
+rng(vec_seeds(j)) % different arbitrary choice
+
+% randomly select indexes to split data into 70% 
+% training set, 0% validation set and 30% test set.
+[train_idx(j,:), ~, test_idx(j,:)] = dividerand(length(sig_nf), 0.7, 0,0.3);
+% slice training data with train indexes 
+x_train = sig_nf(train_idx(j,:), :);
+
+x_test=sig_nf(test_idx(j,:), :);
+
+% select test data
+y_train(:,j) = cfpwv(train_idx(j,:), :);
+y_test(:,j) = cfpwv(test_idx(j,:), :);
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Spectrogram creation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+[spec_img]=CreateSpectrogram(x_train,"Spectrogram abs",w_type,2,499,overlap,0);
+
+[spec_img_test]=CreateSpectrogram(x_test,"Spectrogram abs",w_type,2,499,overlap,0);
+
+
+window_size = 15;
+filter_types_3x3 = ['L3L3'; 'L3E3'; 'L3S3';...
+'E3L3'; 'E3E3'; 'E3S3';...
+'S3L3'; 'S3E3'; 'S3S3'];
+filter_types_5x5 = ['L5L5'; 'L5E5'; 'L5S5'; 'L5W5'; 'L5R5';...
+'E5L5'; 'E5E5'; 'E5S5'; 'E5W5'; 'E5R5';...
+'S5L5'; 'S5E5'; 'S5S5'; 'S5W5'; 'S5R5';...
+'W5L5'; 'W5E5'; 'W5S5'; 'W5W5'; 'W5R5';...
+'R5L5'; 'R5E5'; 'R5S5'; 'R5W5'; 'R5R5'];
+statistic_types ='MEAN';
+normalizing_types = 'MINMAX';
+normalizing_type = normalizing_types(1, :);
+statistic_type = statistic_types(1, :); % MEAN
+
+for fet=1:size(x_train,1)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Energy feature extraction: Train Data 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+image=spec_img(:,:,fet);
+c=0;
+for f3 = 1 : 9
+Fet_3 = Law_mask(image, filter_types_3x3(f3,:), window_size, statistic_type, normalizing_type);
+fe_3(fet,1+(3*c))=mean2(Fet_3);
+fe_3(fet,2+(3*c))=entropy(Fet_3);
+fe_3(fet,3+(3*c))=std2(Fet_3);
+c=c+1;
+end
+
+c=0;
+for i = 1 : 25
+Fet_5= Law_mask(image, filter_types_5x5(i,:), window_size, statistic_type, normalizing_type); 
+fe_5(fet,1+(3*c))=mean2(Fet_5);
+fe_5(fet,2+(3*c))=entropy(Fet_5);
+fe_5(fet,3+(3*c))=std2(Fet_5);
+c=c+1;
+end
+
+end
+
+feature_train(:,:,j)=[fe_3,fe_5];
+
+[idx(j,:),scores(j,:)] = fsrmrmr(feature_train(:,:,j),y_train(:,j));
+
+
+
+for fet_t=1:size(x_test,1)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Energy feature extraction: Test Data 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+
+image=spec_img_test(:,:,fet_t);
+c=0;
+for f3 = 1 : 9
+Fet_3_t = Law_mask(image, filter_types_3x3(f3,:), window_size, statistic_type, normalizing_type);
+fe_3_t(fet_t,1+(3*c))=mean2(Fet_3_t);
+fe_3_t(fet_t,2+(3*c))=entropy(Fet_3_t);
+fe_3_t(fet_t,3+(3*c))=std2(Fet_3_t);
+c=c+1;
+end
+
+c=0;
+for i = 1 : 25
+Fet_5_t= Law_mask(image, filter_types_5x5(i,:), window_size, statistic_type, normalizing_type); 
+fe_5_t(fet_t,1+(3*c))=mean2(Fet_5_t);
+fe_5_t(fet_t,2+(3*c))=entropy(Fet_5_t);
+fe_5_t(fet_t,3+(3*c))=std2(Fet_5_t);
+c=c+1;
+end
+
+
+end
+
+feature_test(:,:,j)=[fe_3_t,fe_5_t];
+
+end
+
+
+writematrix(feature_train,strcat(filen,'/','features_train_all.csv'))
+writematrix(feature_test,strcat(filen,'/','features_test_all.csv'))
+
+save(strcat(filen,'/','features_train_all.mat'),'feature_train')
+save(strcat(filen,'/','features_test_all.mat'),'feature_test')
+
+writematrix(idx,strcat(filen+'/indx_features.csv'))
+writematrix(scores,strcat(filen+'/scores_features.csv'))
+
+
+
+%%
+
+% test with the number of features
+
+n_fet=1; % number of feature used
+
+
+best_idx=mode(idx,1);
+
+feat_train=feature_train(:,best_idx(1:n_fet),:);
+feat_test=feature_test(:,best_idx(1:n_fet),:);
+
+
+
+
+writematrix(y_train,strcat(filen,'/','y_train.csv'))
+writematrix(y_test,strcat(filen,'/','y_test.csv'))
+
+writematrix(feat_train,strcat(filen,'/','features_train.csv'))
+writematrix(feat_test,strcat(filen,'/','features_test.csv'))
+
+writematrix(best_idx,strcat(filen,'/','best_feature_indx.csv'))
+
+
+
+
+save(strcat(filen,'/','features_train.mat'),'feat_train')
+save(strcat(filen,'/','features_test.mat'),'feat_test')
+
+save(strcat(filen,'/','y_train.mat'),'y_train')
+save(strcat(filen,'/','y_test.mat'),'y_test')
+

@@ -1,0 +1,169 @@
+%==========================================================================
+%  Statistical features
+%   Author: Juan M. Vargas
+%   E-mail: jm.manuelvg@gmail.com
+%    July 25th, 2022
+%==========================================================================
+clear all
+clc
+
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load folder and Dataset
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+addpath './Function'  % add function folder
+addpath './Data'  % add data folder
+load('pwdb_data.mat') % Load in-silico dataset
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Select Parameters
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+sig_n="Radial"; % Signal location : Radial , Brachial and Digital
+
+wav='BP'; % Signal type : BP or PPG
+
+SNR="no"; % Noise level : PPG: 65, 45 and 30  and BP: 20, 10, 5
+
+w_type="Hamming"; %Select window type from : Hamming or Kaiser
+
+overlap=0; % Overlaping percentage: Hamming: 0, 60, 95 and Kaiser: 0 , 61, 75 
+
+models='Stat'; % Features selection method
+
+vec_seeds=[5]; % Seed value 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Folder creation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+filen=strcat('./Results/ML/',models,'_',wav,'_',sig_n,'_SNR=',SNR) % Full name of the folder
+
+mkdir(filen) % Create folder
+
+
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Load signals
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i=1:4374
+
+sig=data.waves.P_Radial{1,i}; % Load signal
+
+if strcmp(SNR,"no")==0
+    sig=awgn(sig,str2double(SNR)); % Add Gaussian White noise
+
+end
+
+sig_nf{i,1}=(sig-min(sig))/(max(sig)-min(sig)); % Normalize signal
+
+
+end
+
+tab=struct2table(data.haemods);
+cfpwv=tab.('PWV_cf');
+
+
+%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Split dataset
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for j=1:size(vec_seeds,2)
+rng(vec_seeds(j)) % different arbitrary choice
+
+% randomly select indexes to split data into 70% 
+% training set, 0% validation set and 30% test set.
+[train_idx(j,:), ~, test_idx(j,:)] = dividerand(length(sig_nf), 0.7, 0,0.3);
+
+% slice training data with train indexes 
+x_train = sig_nf(train_idx(j,:), :);
+
+% slice testing data with test indexes
+x_test=sig_nf(test_idx(j,:), :);
+
+% select test data
+y_train(:,j) = cfpwv(train_idx(j,:), :);
+y_test(:,j) = cfpwv(test_idx(j,:), :);
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Spectrogram creation
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+[spec_img]=CreateSpectrogram(x_train,"Spectrogram abs",w_type,2,499,overlap,0);
+
+[spec_img_test]=CreateSpectrogram(x_test,"Spectrogram abs",w_type,2,499,overlap,0);
+
+
+for fet=1:size(x_train,1)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Statistical feature extraction: Train Data 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+
+m2= moment(spec_img(:,:,fet),2,'all');
+feature_train(fet,1,j)=log10(sqrt(m2));
+
+feature_train(fet,2,j) = moment(spec_img(:,:,fet),3,'all');
+feature_train(fet,3,j) = log10(moment(spec_img(:,:,fet),4,'all'));
+spec_nom=(spec_img(:,:,fet)-min(spec_img(:,:,fet)))/(max(spec_img(:,:,fet))-min(spec_img(:,:,fet)));
+feature_train(fet,4,j)=sqrt(moment(spec_nom,2,'all'));
+feature_train(fet,5,j)=moment(spec_nom,3,'all');
+feature_train(fet,6,j)=moment(spec_nom,4,'all');
+
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Feature selection
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+[idx(j,:),scores(j,:)] = fsrmrmr(feature_train(:,:,j),y_train(:,j));
+
+
+
+for fet_t=1:size(x_test,1)
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Statistical feature extraction: Train Data 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+m2= moment(spec_img_test(:,:,fet_t),2,'all');
+feature_test(fet_t,1,j)=log10(sqrt(m2));
+
+feature_test(fet_t,2,j) = moment(spec_img_test(:,:,fet_t),3,'all');
+feature_test(fet_t,3,j) = log10(moment(spec_img_test(:,:,fet_t),4,'all'));
+spec_nom_test=(spec_img_test(:,:,fet_t)-min(spec_img_test(:,:,fet_t)))/(max(spec_img_test(:,:,fet_t))-min(spec_img_test(:,:,fet_t)));
+feature_test(fet_t,4,j)=sqrt(moment(spec_nom_test,2,'all'));
+feature_test(fet_t,5,j)=moment(spec_nom_test,3,'all');
+feature_test(fet_t,6,j)=moment(spec_nom_test,4,'all');
+
+end
+
+end
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Save results
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+writematrix(feature_train,strcat(filen,'/','features_train_all.csv'))
+writematrix(feature_test,strcat(filen,'/','features_test_all.csv'))
+save(strcat(filen,'/','features_train_all.mat'),'feature_train')
+save(strcat(filen,'/','features_test_all.mat'),'feature_test')
+writematrix(idx,strcat(filen+'/indx_features.csv'))
+writematrix(scores,strcat(filen+'/scores_features.csv'))
+best_idx=mode(idx,1);
+writematrix(best_idx,strcat(filen,'/','best_feature_indx.csv'))
+save(strcat(filen,'/','y_train.mat'),'y_train')
+save(strcat(filen,'/','y_test.mat'),'y_test')
+
