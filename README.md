@@ -1,6 +1,6 @@
 # Spectrogram_AS_Frontiers
 
-This codes correspond to the paper called Carotid-to-Femoral Pulse Wave Velocity Estimation using spectrogram from Peripheral Pulse Wave Signals: An in-silico Study, and have the following uses:
+This codes correspond to the paper called "A Learning-Based Image Processing  Approach for Pulse Wave Velocity Estimation using spectrogram from Peripheral Pulse Wave Signals: An in-silico Study", and have the following uses:
 
 
 - Spectrogram_selection.m : This file containts the code to select the parameters for the histogram computing the Q-metrics.
